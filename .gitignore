@@ -28,6 +28,10 @@ yarn-error.log*
 .env*.local
 .env
 
+# app data (sqlite db + staged uploads); keep the directory itself
+/data/*
+!/data/.gitkeep
+
 # vercel
 .vercel
 
