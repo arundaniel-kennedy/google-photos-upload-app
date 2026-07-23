@@ -78,3 +78,18 @@ pm2 start ecosystem.config.js
 ```
 
 Set `COOKIE_SECURE=true` when serving over HTTPS.
+
+### Uploads fail from phones but work on your PC
+
+This is almost always the reverse proxy, not the app:
+
+- **413 / "too large"** — raise Nginx's body limit (default is only 1 MB, which
+  most phone photos exceed): add `client_max_body_size 50m;` to the `server` (or
+  `location /`) block and reload Nginx. Phone cameras produce much larger files
+  than the small test images you'd drag in on a desktop.
+- **403 "origin check"** — the proxy is rewriting the `Host` header. Either add
+  `proxy_set_header Host $host;` and `proxy_set_header X-Forwarded-Host $host;`
+  to the Nginx config, or set `TRUSTED_ORIGINS` to the public hostname.
+
+The upload result now shows the exact HTTP status, which tells you which of the
+above you're hitting.

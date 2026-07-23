@@ -21,8 +21,23 @@ export default function UploadPortal() {
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       if (res.ok) return { name: file.name, ok: true, message: 'Uploaded — awaiting review' };
-      const data = await res.json().catch(() => ({}));
-      return { name: file.name, ok: false, message: data.error || 'Upload failed' };
+
+      // A JSON error comes from our API; a proxy limit (e.g. Nginx 413) returns
+      // HTML, so fall back to a status-based message instead of swallowing it.
+      let serverMsg = '';
+      if ((res.headers.get('content-type') || '').includes('application/json')) {
+        serverMsg = (await res.json().catch(() => ({}))).error || '';
+      }
+      const byStatus: Record<number, string> = {
+        403: 'Upload was blocked by the server (origin check).',
+        413: 'This photo is too large to upload.',
+        415: 'That file type is not supported.',
+      };
+      return {
+        name: file.name,
+        ok: false,
+        message: serverMsg || byStatus[res.status] || `Upload failed (HTTP ${res.status}).`,
+      };
     } catch {
       return { name: file.name, ok: false, message: 'Could not reach the server' };
     }

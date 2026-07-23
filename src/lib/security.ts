@@ -1,20 +1,22 @@
 import { headers } from 'next/headers';
 import { BadRequestError, ForbiddenError } from './errors';
-import { MAX_NAME_LENGTH } from './config';
+import { config, MAX_NAME_LENGTH } from './config';
 
 /**
  * Reject state-changing requests that don't originate from our own site.
  * Combined with SameSite=Lax session cookies this closes the CSRF gap without
- * a token round-trip. Same-origin requests set Origin to our host; we compare
- * against the Host header the request actually arrived on.
+ * a token round-trip.
+ *
+ * We compare the request's Origin (or Referer) host against every host the app
+ * is legitimately reachable at. Behind a reverse proxy the browser's Origin is
+ * the public domain while the app's own Host header may be an internal name, so
+ * we also trust X-Forwarded-Host and any TRUSTED_ORIGINS from config.
  */
 export function assertSameOrigin() {
   const h = headers();
   const origin = h.get('origin');
   // Some same-origin navigations omit Origin; fall back to Referer.
   const referer = h.get('referer');
-  const host = h.get('host');
-  if (!host) throw new ForbiddenError('Missing host header');
 
   const source = origin ?? referer;
   // No Origin/Referer at all is treated as cross-site for mutating endpoints.
@@ -22,11 +24,23 @@ export function assertSameOrigin() {
 
   let sourceHost: string;
   try {
-    sourceHost = new URL(source).host;
+    sourceHost = new URL(source).host.toLowerCase();
   } catch {
     throw new ForbiddenError('Invalid origin');
   }
-  if (sourceHost !== host) {
+
+  const allowed = new Set(
+    [
+      h.get('host'),
+      // May be a comma-separated list if the request passed through proxies.
+      ...(h.get('x-forwarded-host') ?? '').split(','),
+      ...config.trustedOrigins,
+    ]
+      .map((v) => v?.trim().toLowerCase())
+      .filter((v): v is string => Boolean(v)),
+  );
+
+  if (!allowed.has(sourceHost)) {
     throw new ForbiddenError('Cross-origin request rejected');
   }
 }
